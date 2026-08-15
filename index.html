@@ -147,9 +147,39 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
 .back-btn:hover{opacity:1;}
 
 @media (prefers-reduced-motion: reduce){*{transition-duration:.01ms !important; animation-duration:.01ms !important;}}
+
+/* ---------- LOCK SCREEN ---------- */
+#lockScreen{position:fixed; inset:0; z-index:999; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(160deg, var(--desk-light), var(--desk) 70%); padding:20px;}
+#lockScreen.unlocked{display:none;}
+.lock-card{width:min(320px, 90vw); background:linear-gradient(180deg, var(--parchment-2), var(--parchment));
+  border:1px solid var(--parchment-shadow); border-radius:8px; padding:28px 24px; text-align:center;
+  box-shadow:0 20px 50px rgba(0,0,0,0.55);}
+.lock-card .lock-seal{width:56px; height:56px; margin:0 auto 14px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, var(--wax-light), var(--wax) 55%, var(--wax-dark));
+  display:flex; align-items:center; justify-content:center; color:#f2e2c4; font-size:26px;
+  box-shadow:inset 0 0 8px rgba(0,0,0,0.35);}
+.lock-card h2{margin:0 0 6px; font-family:'IM Fell English SC', serif; font-size:19px; letter-spacing:1px; color:var(--ink);}
+.lock-card p{margin:0 0 16px; font-size:13.5px; color:var(--ink-soft); font-style:italic;}
+.lock-card input{width:100%; padding:9px 10px; border-radius:4px; border:1px solid var(--parchment-shadow);
+  background:#fbf3dd; font-family:inherit; font-size:15px; color:var(--ink); text-align:center; letter-spacing:1px;}
+.lock-card button{margin-top:12px; width:100%; padding:9px; border:none; border-radius:4px; background:var(--wax);
+  color:#f2e2c4; font-family:'IM Fell English SC', serif; font-size:14px; letter-spacing:1px; cursor:pointer; transition:background .2s ease;}
+.lock-card button:hover{background:var(--wax-light);}
+.lock-error{margin-top:10px; font-size:12.5px; color:var(--wax); min-height:16px;}
 </style>
 </head>
 <body>
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-seal">🔒</div>
+    <h2>Courrier scellé</h2>
+    <p>Un mot de passe est nécessaire pour lire ce courrier.</p>
+    <input type="password" id="lockInput" placeholder="mot de passe" autocomplete="off">
+    <button id="lockBtn">Entrer</button>
+    <div class="lock-error" id="lockError"></div>
+  </div>
+</div>
 <div id="app">
   <div class="desk-bg"></div>
 
@@ -224,6 +254,26 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
 <script>
 (function(){
   const el = (id) => document.getElementById(id);
+
+  // ---------- Password gate ----------
+  // Change le mot de passe ici :
+  const SITE_PASSWORD = "ilvermorny";
+  const lockScreen = el('lockScreen');
+  const lockInput = el('lockInput');
+  const lockBtn = el('lockBtn');
+  const lockError = el('lockError');
+  function tryUnlock(){
+    if(lockInput.value === SITE_PASSWORD){
+      lockScreen.classList.add('unlocked');
+    } else {
+      lockError.textContent = "Mot de passe incorrect.";
+      lockInput.value = "";
+      lockInput.focus();
+    }
+  }
+  lockBtn.addEventListener('click', tryUnlock);
+  lockInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') tryUnlock(); });
+
   let letters = []; // {id, sender, recipient, preview, pages:[dataURL], read:bool}
   let nextId = 1;
   let currentLetterId = null;
