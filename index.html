@@ -573,14 +573,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
 
   // Lettre de démonstration pré-remplie (à retirer via le × dans le réglage si besoin)
   /*EXPORT_LETTERS_START*/
-  letters.push({
-    id: nextId++,
-    sender: "Khira",
-    recipient: "Adrian",
-    preview: "Des nouvelles depuis le manoir...",
-    pages: [],
-    read: false
-  });
+  letters = [];
   /*EXPORT_LETTERS_END*/
   renderInbox();
   renderExistingList();
