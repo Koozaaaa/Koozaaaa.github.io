@@ -198,6 +198,8 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     <div class="file-status" id="fileStatus">Aucune page ajoutée pour l'instant.</div>
     <button class="primary" id="addBtn">Déposer dans le courrier</button>
     <div class="existing-list" id="existingList"></div>
+    <button class="primary" id="exportBtn" style="margin-top:10px; background:var(--gold); color:var(--ink);">Exporter avec ces lettres</button>
+    <div class="file-status" id="exportStatus"></div>
   </div>
 
   <div class="toast" id="toast">
@@ -570,6 +572,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   }
 
   // Lettre de démonstration pré-remplie (à retirer via le × dans le réglage si besoin)
+  /*EXPORT_LETTERS_START*/
   letters.push({
     id: nextId++,
     sender: "Khira",
@@ -578,8 +581,38 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     pages: [],
     read: false
   });
+  /*EXPORT_LETTERS_END*/
   renderInbox();
   renderExistingList();
+
+  // ---------- Export : télécharge une version du fichier avec les lettres actuelles intégrées ----------
+  const exportBtn = el('exportBtn');
+  exportBtn.addEventListener('click', async () => {
+    const status = el('exportStatus');
+    status.textContent = "";
+    try{
+      const res = await fetch(location.href, {cache:'no-store'});
+      if(!res.ok) throw new Error('fetch failed');
+      let html = await res.text();
+      const startMarker = '/*EXPORT_LETTERS_START*/';
+      const endMarker = '/*EXPORT_LETTERS_END*/';
+      const si = html.indexOf(startMarker);
+      const ei = html.indexOf(endMarker);
+      if(si === -1 || ei === -1) throw new Error('markers not found');
+      const safeJson = JSON.stringify(letters).replace(/</g, '\\u003c');
+      const injected = startMarker + '\n  letters = ' + safeJson + ';\n  ' + endMarker;
+      const newHtml = html.slice(0, si) + injected + html.slice(ei + endMarker.length);
+      const blob = new Blob([newHtml], {type:'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'index.html';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      status.textContent = "Fichier téléchargé — remplace index.html sur GitHub avec.";
+    }catch(err){
+      status.textContent = "Échec : ouvre la page en ligne (le lien https://...github.io) pour exporter, pas le fichier local.";
+    }
+  });
 })();
 </script>
 </body>
