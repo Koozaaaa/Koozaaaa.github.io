@@ -286,8 +286,8 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   // ---------- Cloud config (courrier partagé) ----------
   // Laisse vide tant que le courrier partagé n'est pas créé.
   /*EXPORT_URL_START*/
-  let JSONBIN_KEY = "$2a$10$qzqQCHtyKqb5w3HQWYWaXOcmCvXS01/Tvr6W0kgsMLXXBNPwNdy/.";
-  let JSONBIN_ID = "6a81bf1fda38895dfeeb70bb";
+  let JSONBIN_KEY = "";
+  let JSONBIN_ID = "";
   /*EXPORT_URL_END*/
 
   let letters = []; // {id, sender, recipient, preview, pages:[dataURL]}
@@ -470,20 +470,43 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     }
   }
 
-  pageInput.addEventListener('change', () => {
+  // Redimensionne + recompresse une image pour rester sous la limite du courrier partagé (1 Mo total)
+  function compressImage(file, maxDim, quality){
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if(w > maxDim || h > maxDim){
+            if(w >= h){ h = Math.round(h * (maxDim / w)); w = maxDim; }
+            else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0,0,w,h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(e.target.result); // fallback : image d'origine
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  pageInput.addEventListener('change', async () => {
     const files = Array.from(pageInput.files || []);
     if(files.length === 0) return;
     pendingPages = [];
-    let loaded = 0;
-    files.forEach((file, idx) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        pendingPages[idx] = e.target.result;
-        loaded++;
-        if(loaded === files.length) fileStatus.textContent = files.length + " page(s) chargée(s).";
-      };
-      reader.readAsDataURL(file);
-    });
+    fileStatus.textContent = "Compression en cours...";
+    for(let idx = 0; idx < files.length; idx++){
+      pendingPages[idx] = await compressImage(files[idx], 1100, 0.72);
+    }
+    fileStatus.textContent = files.length + " page(s) chargée(s) (compressée(s) pour le courrier partagé).";
   });
 
   addBtn.addEventListener('click', async () => {
