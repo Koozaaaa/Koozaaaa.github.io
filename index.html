@@ -286,8 +286,8 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   // ---------- Cloud config (courrier partagé) ----------
   // Laisse vide tant que le courrier partagé n'est pas créé.
   /*EXPORT_URL_START*/
-  let JSONBIN_KEY = "$2a$10$qzqQCHtyKqb5w3HQWYWaXOcmCvXS01/Tvr6W0kgsMLXXBNPwNdy/.";
-  let JSONBIN_ID = "6a81bb1fda38895dfeeb6615";
+  let JSONBIN_KEY = "";
+  let JSONBIN_ID = "";
   /*EXPORT_URL_END*/
 
   let letters = []; // {id, sender, recipient, preview, pages:[dataURL]}
@@ -488,9 +488,13 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     showToast(letter);
     addBtn.disabled = true;
     addBtn.textContent = "Envoi...";
-    await pushCloudLetters();
+    const pushed = await pushCloudLetters();
     addBtn.disabled = false;
     addBtn.textContent = "Déposer dans le courrier";
+    if(JSONBIN_KEY && JSONBIN_ID && !pushed){
+      cloudErrorMsg = "L'envoi vers le courrier partagé a échoué (vérifie ta connexion). Cette lettre n'est visible que dans ton navigateur pour l'instant.";
+      renderInbox();
+    }
   });
 
   function renderExistingList(){
@@ -532,11 +536,15 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
       ? "Aucune lettre pour l'instant"
       : (unread > 0 ? unread + " nouvelle" + (unread>1?"s":"") + " lettre" + (unread>1?"s":"") : "Tout a été lu");
 
+    const errorBanner = cloudErrorMsg
+      ? '<div style="background:#fbeaea; color:var(--wax); border-bottom:1px solid var(--wax); padding:10px 16px; font-size:12.5px; font-style:italic;">⚠ ' + cloudErrorMsg + '</div>'
+      : '';
+
     if(letters.length === 0){
-      inboxList.innerHTML = '<div class="inbox-empty"><p>Ta boîte est vide. Ouvre le réglage ⚙ en haut à droite pour déposer une première lettre.</p></div>';
+      inboxList.innerHTML = errorBanner + '<div class="inbox-empty"><p>Ta boîte est vide. Ouvre le réglage ⚙ en haut à droite pour déposer une première lettre.</p></div>';
       return;
     }
-    inboxList.innerHTML = "";
+    inboxList.innerHTML = errorBanner;
     letters.forEach(l => {
       const read = readSet.has(l.id);
       const row = document.createElement('div');
@@ -674,14 +682,38 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     noise.stop(ctx.currentTime + dur);
   }
 
+  let cloudErrorMsg = "";
   async function refreshFromCloud(showSpin){
     if(!JSONBIN_KEY || !JSONBIN_ID) return;
     if(showSpin){ refreshBtn.classList.add('spin'); setTimeout(() => refreshBtn.classList.remove('spin'), 700); }
-    const cloud = await fetchCloudLetters();
-    if(cloud !== null){
-      letters = cloud;
-      renderInbox();
-      renderExistingList();
+    const result = await fetchCloudLettersVerbose();
+    if(result.ok){
+      cloudErrorMsg = "";
+      letters = result.letters;
+    } else {
+      cloudErrorMsg = result.error;
+    }
+    renderInbox();
+    renderExistingList();
+  }
+  async function fetchCloudLettersVerbose(){
+    try{
+      const res = await fetch('https://api.jsonbin.io/v3/b/' + JSONBIN_ID + '/latest', {
+        cache:'no-store',
+        headers: jsonbinHeaders({'X-Bin-Meta':'false'})
+      });
+      if(!res.ok){
+        let detail = '';
+        try{ const errBody = await res.json(); detail = errBody && errBody.message ? errBody.message : ''; }catch(e){}
+        return {ok:false, error: 'Erreur ' + res.status + (detail ? (' — ' + detail) : '')};
+      }
+      const data = await res.json();
+      if(!Array.isArray(data.letters)){
+        return {ok:false, error: "Réponse inattendue du serveur (structure imprévue)."};
+      }
+      return {ok:true, letters: data.letters};
+    }catch(err){
+      return {ok:false, error: "Impossible de joindre le serveur (réseau ou blocage du navigateur)."};
     }
   }
   refreshBtn.addEventListener('click', () => refreshFromCloud(true));
