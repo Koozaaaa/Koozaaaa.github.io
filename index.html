@@ -286,7 +286,8 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   // ---------- Cloud config (courrier partagé) ----------
   // Laisse vide tant que le courrier partagé n'est pas créé.
   /*EXPORT_URL_START*/
-  let JSONBLOB_URL = "";
+  let JSONBIN_KEY = "";
+  let JSONBIN_ID = "";
   /*EXPORT_URL_END*/
 
   let letters = []; // {id, sender, recipient, preview, pages:[dataURL]}
@@ -354,59 +355,77 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
 
   function makeId(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 
-  // ---------- Cloud sync (jsonblob.com — gratuit, sans compte) ----------
+  // ---------- Cloud sync (jsonbin.io — compte gratuit requis) ----------
+  function jsonbinHeaders(extra){
+    return Object.assign({'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY}, extra || {});
+  }
   async function fetchCloudLetters(){
-    if(!JSONBLOB_URL) return null;
+    if(!JSONBIN_KEY || !JSONBIN_ID) return null;
     try{
-      const res = await fetch(JSONBLOB_URL, {cache:'no-store', headers:{'Accept':'application/json'}});
+      const res = await fetch('https://api.jsonbin.io/v3/b/' + JSONBIN_ID + '/latest', {
+        cache:'no-store',
+        headers: jsonbinHeaders({'X-Bin-Meta':'false'})
+      });
       if(!res.ok) throw new Error('fetch failed ' + res.status);
       const data = await res.json();
       return Array.isArray(data.letters) ? data.letters : [];
     }catch(err){ console.error('fetchCloudLetters', err); return null; }
   }
   async function pushCloudLetters(){
-    if(!JSONBLOB_URL) return false;
+    if(!JSONBIN_KEY || !JSONBIN_ID) return false;
     try{
-      const res = await fetch(JSONBLOB_URL, {
+      const res = await fetch('https://api.jsonbin.io/v3/b/' + JSONBIN_ID, {
         method:'PUT',
-        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        headers: jsonbinHeaders(),
         body: JSON.stringify({letters})
       });
       return res.ok;
     }catch(err){ console.error('pushCloudLetters', err); return false; }
   }
-  async function createCloudMailbox(){
-    const res = await fetch('https://jsonblob.com/api/jsonBlob', {
+  async function createCloudMailbox(masterKey){
+    const res = await fetch('https://api.jsonbin.io/v3/b', {
       method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      headers:{'Content-Type':'application/json','X-Master-Key':masterKey,'X-Bin-Name':'Courrier RP'},
       body: JSON.stringify({letters:[]})
     });
-    const loc = res.headers.get('Location');
-    if(!loc) throw new Error('no Location header');
-    return loc;
+    if(!res.ok){
+      const msg = res.status === 401 ? "Clé API invalide." : ("Erreur " + res.status);
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    if(!data.metadata || !data.metadata.id) throw new Error('réponse inattendue');
+    return data.metadata.id;
   }
 
   function renderCloudBox(){
-    if(JSONBLOB_URL){
+    if(JSONBIN_KEY && JSONBIN_ID){
       cloudBox.innerHTML = '<span class="cloud-ok">● Courrier partagé actif</span><br>Toute lettre ajoutée ici apparaît aussi chez ceux qui ont le lien, après actualisation.';
     } else {
-      cloudBox.innerHTML = '<span class="cloud-off">● Courrier non partagé</span><br>Pour l\'instant les lettres ne restent que dans ton navigateur.<br><button class="secondary" id="initCloudBtn">Créer le courrier partagé</button>';
+      cloudBox.innerHTML = '<span class="cloud-off">● Courrier non partagé</span><br>'
+        + 'Crée un compte gratuit sur <strong>jsonbin.io</strong>, copie ta clé sur la page "API Keys", colle-la ci-dessous.'
+        + '<input type="text" id="masterKeyField" placeholder="Colle ta X-Master-Key ici" style="margin-top:8px; width:100%; padding:6px 8px; border-radius:3px; border:1px solid var(--parchment-shadow); background:#fbf3dd; font-size:12.5px;">'
+        + '<button class="secondary" id="initCloudBtn">Créer le courrier partagé</button>'
+        + '<div id="cloudErr" style="color:var(--wax); font-size:11.5px; margin-top:4px;"></div>';
       const btn = el('initCloudBtn');
-      if(btn){
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          btn.textContent = "Création en cours...";
-          try{
-            const url = await createCloudMailbox();
-            JSONBLOB_URL = url;
-            await pushCloudLetters(); // envoie les lettres locales actuelles, s'il y en a
-            renderCloudBox();
-            offerConfiguredDownload();
-          }catch(err){
-            cloudBox.innerHTML = '<span class="cloud-off">Échec de la création. Réessaie, ou vérifie ta connexion.</span>';
-          }
-        });
-      }
+      const keyField = el('masterKeyField');
+      const errBox = el('cloudErr');
+      btn.addEventListener('click', async () => {
+        const key = (keyField.value || '').trim();
+        if(!key){ errBox.textContent = "Colle d'abord ta clé API."; return; }
+        btn.disabled = true; btn.textContent = "Création en cours...";
+        errBox.textContent = "";
+        try{
+          const id = await createCloudMailbox(key);
+          JSONBIN_KEY = key;
+          JSONBIN_ID = id;
+          await pushCloudLetters();
+          renderCloudBox();
+          offerConfiguredDownload();
+        }catch(err){
+          errBox.textContent = "Échec : " + err.message;
+          btn.disabled = false; btn.textContent = "Créer le courrier partagé";
+        }
+      });
     }
   }
 
@@ -425,7 +444,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
       const s1 = '/*EXPORT_URL_START*/', e1 = '/*EXPORT_URL_END*/';
       const si = html.indexOf(s1), ei = html.indexOf(e1);
       if(si === -1 || ei === -1) throw new Error('markers not found');
-      const injected = s1 + '\n  let JSONBLOB_URL = ' + JSON.stringify(JSONBLOB_URL) + ';\n  ' + e1;
+      const injected = s1 + '\n  let JSONBIN_KEY = ' + JSON.stringify(JSONBIN_KEY) + ';\n  let JSONBIN_ID = ' + JSON.stringify(JSONBIN_ID) + ';\n  ' + e1;
       const newHtml = html.slice(0, si) + injected + html.slice(ei + e1.length);
       const blob = new Blob([newHtml], {type:'text/html'});
       const url = URL.createObjectURL(blob);
@@ -434,7 +453,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     }catch(err){
-      alert("Le téléchargement automatique n'a pas fonctionné (il faut être sur la page en ligne, pas en fichier local). Note l'URL suivante et colle-la manuellement à la place de JSONBLOB_URL dans le fichier :\n\n" + JSONBLOB_URL);
+      alert("Le téléchargement automatique n'a pas fonctionné (il faut être sur la page en ligne, pas en fichier local). Note ces valeurs et colle-les manuellement à la place de JSONBIN_KEY et JSONBIN_ID dans le fichier :\n\nJSONBIN_KEY: " + JSONBIN_KEY + "\nJSONBIN_ID: " + JSONBIN_ID);
     }
   }
 
@@ -656,7 +675,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   }
 
   async function refreshFromCloud(showSpin){
-    if(!JSONBLOB_URL) return;
+    if(!JSONBIN_KEY || !JSONBIN_ID) return;
     if(showSpin){ refreshBtn.classList.add('spin'); setTimeout(() => refreshBtn.classList.remove('spin'), 700); }
     const cloud = await fetchCloudLetters();
     if(cloud !== null){
@@ -672,7 +691,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   renderCloudBox();
   renderInbox();
   renderExistingList();
-  if(JSONBLOB_URL){ refreshFromCloud(false); }
+  if(JSONBIN_KEY && JSONBIN_ID){ refreshFromCloud(false); }
 })();
 </script>
 </body>
