@@ -286,8 +286,8 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
   // ---------- Cloud config (courrier partagé) ----------
   // Laisse vide tant que le courrier partagé n'est pas créé.
   /*EXPORT_URL_START*/
-  let JSONBIN_KEY = "$2a$10$qzqQCHtyKqb5w3HQWYWaXOcmCvXS01/Tvr6W0kgsMLXXBNPwNdy/.";
-  let JSONBIN_ID = "6a81bd35f5f4af5e291cf561";
+  let JSONBIN_KEY = "";
+  let JSONBIN_ID = "";
   /*EXPORT_URL_END*/
 
   let letters = []; // {id, sender, recipient, preview, pages:[dataURL]}
@@ -371,16 +371,29 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
       return Array.isArray(data.letters) ? data.letters : [];
     }catch(err){ console.error('fetchCloudLetters', err); return null; }
   }
+  let lastPushError = "";
   async function pushCloudLetters(){
     if(!JSONBIN_KEY || !JSONBIN_ID) return false;
+    lastPushError = "";
     try{
       const res = await fetch('https://api.jsonbin.io/v3/b/' + JSONBIN_ID, {
         method:'PUT',
         headers: jsonbinHeaders(),
         body: JSON.stringify({letters})
       });
-      return res.ok;
-    }catch(err){ console.error('pushCloudLetters', err); return false; }
+      if(!res.ok){
+        let detail = '';
+        try{ const errBody = await res.json(); detail = errBody && errBody.message ? errBody.message : ''; }catch(e){}
+        lastPushError = 'Erreur ' + res.status + (detail ? (' — ' + detail) : '');
+        console.error('pushCloudLetters', lastPushError);
+        return false;
+      }
+      return true;
+    }catch(err){
+      lastPushError = 'Réseau/CORS : ' + (err && err.message ? err.message : String(err));
+      console.error('pushCloudLetters', err);
+      return false;
+    }
   }
   async function createCloudMailbox(masterKey){
     const res = await fetch('https://api.jsonbin.io/v3/b', {
@@ -492,7 +505,7 @@ html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:'Cormorant
     addBtn.disabled = false;
     addBtn.textContent = "Déposer dans le courrier";
     if(JSONBIN_KEY && JSONBIN_ID && !pushed){
-      cloudErrorMsg = "L'envoi vers le courrier partagé a échoué (vérifie ta connexion). Cette lettre n'est visible que dans ton navigateur pour l'instant.";
+      cloudErrorMsg = "Envoi échoué (" + lastPushError + "). Cette lettre n'est visible que dans ton navigateur pour l'instant.";
       renderInbox();
     }
   });
